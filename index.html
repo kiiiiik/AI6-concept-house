@@ -3,56 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maison 3D - Configuration Par Défaut</title>
+    <title>Maison 3D - Hologramme Final</title>
     <style>
-        body { margin: 0; background-color: #ffffff; height: 250vh; overflow-x: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+        body { margin: 0; background-color: #ffffff; height: 100vh; overflow: hidden; font-family: sans-serif; }
         canvas { display: block; position: fixed; top: 0; left: 0; }
-
-        /* --- DESIGN LIL-GUI HAUTE VISIBILITÉ --- */
-        .lil-gui { 
-            --background-color: #ffffff; 
-            --title-background-color: #001DFC; 
-            --title-text-color: #ffffff;
-            --name-color: #000000;       
-            --value-color: #001DFC;      
-            --widget-color: #f0f0f0;     
-            --focus-color: #001DFC;      
-            
-            top: 25px !important; 
-            right: 25px !important;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-            width: 320px !important; 
-            border: 1px solid #ccc;
-        }
-
-        .lil-gui .title {
-            background-color: #f4f4f4 !important; 
-            color: #000000 !important;            
-            font-weight: 800 !important;
-            border-bottom: 1px solid #ddd !important;
-            padding: 8px 10px !important;
-            text-transform: uppercase;
-        }
-
-        .lil-gui .name {
-            font-weight: 600 !important;
-            color: #000 !important; 
-            font-size: 13px !important;
-        }
-
-        .lil-gui .slider-fg { background: #001DFC !important; }
-        .lil-gui select { 
-            border: 1px solid #001DFC !important; 
-            color: #001DFC !important;
-            font-weight: bold;
-            background: white !important;
-        }
-
-        .lil-gui .controller {
-            border-bottom: 1px solid #eee;
-            padding: 5px 0;
-        }
     </style>
 </head>
 <body>
@@ -61,8 +15,7 @@
     {
         "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm"
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
     }
 </script>
@@ -70,45 +23,40 @@
 <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-    import { GUI } from 'lil-gui';
 
-    let scene, camera, renderer, composer, model, pointsMesh, bakedShadow;
+    let scene, camera, renderer, composer, model, trees, groundPointsMesh, surfacePointsMesh, bakedShadow;
     let mouse = new THREE.Vector2();
     let raycaster = new THREE.Raycaster();
     let groundPlane;
     const clock = new THREE.Clock();
-    let scrollProgress = 0;
     const textureLoader = new THREE.TextureLoader();
 
-    // --- CONFIGURATION PAR DÉFAUT MISE À JOUR ---
     const settings = {
         exposure: 1.70,
-        targetZoomAmount: 1.00,
-        targetRotationX: -0.01,
-        targetRotationY: -1.50,
+        rgbOffset: 0.018,
         bokehFocus: 0.3,
         bokehBlurMax: 0.007,
-        rgbOffset: 0.018,
-        grainIntensity: 0,
-        uExcludeRadius: 3,
-        pointSizeBase: 90.0,
-        pointSizeHover: 150.0,
+        baseColor: '#001DFC',
+        scanColor: '#00FCDA',
+        scanSpeed: 0.8,           
+        scanRadiusMax: 12.0,       
+        trailGap: 2.5,            
+        originY: 4.0,             
+        pointsVisibleBase: 0,   
+        surfacePointSize: 42.0,
+        uInflation: 0.04,
+        pointSizeBase: 80.0,
+        pointSizeHover: 100.0, 
         pointsHeight: -1,
-        shadowScaleX: 16.8,
-        shadowScaleY: 16.8,
-        shadowOpacity: 0.6,             // <-- Changé à 0.6
-        shadowPosY: 0.04,
-        currentShadowName: 'Diffuse Noir' // <-- Changé par défaut
-    };
-
-    const shadowList = {
-        'Diffuse Bleu': 'ombre_maison-diffuse-bleu.png',
-        'Diffuse Noir': 'ombre_maison-diffuse-noir.png',
-        'Dure Bleu': 'ombre_maison-dure-bleu.png',
-        'Dure Noir': 'ombre_maison-dure-noir.png'
+        shadowOpacity: 0.4,
+        currentShadowName: 'Dure Noir',
+        treePosX: -0.77,
+        treePosY: -0.92,
+        treePosZ: -0.56
     };
 
     init();
@@ -130,7 +78,7 @@
         renderer.toneMappingExposure = settings.exposure;
         document.body.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1.9));
+        scene.add(new THREE.AmbientLight(0xffffff, 1.8));
         const light = new THREE.DirectionalLight(0xffffff, 2.0);
         light.position.set(10, 15, 1);
         scene.add(light);
@@ -140,66 +88,104 @@
         groundPlane.position.y = settings.pointsHeight; 
         scene.add(groundPlane);
 
-        createInteractivePoints();
+        createGroundPoints();
 
         const loader = new GLTFLoader();
+        
         loader.load('maison.glb', (gltf) => {
             model = gltf.scene;
+            model.updateMatrixWorld(true);
             const box = new THREE.Box3().setFromObject(model);
             const center = box.getCenter(new THREE.Vector3());
             model.position.sub(center);
             scene.add(model);
+            createSurfacePoints(model);
             createBakedShadow(); 
-            createGUI();         
             initPostProcessing();
-            animate();
+        });
+
+        loader.load('arbres.glb', (gltf) => {
+            trees = gltf.scene;
+            trees.position.set(settings.treePosX, settings.treePosY, settings.treePosZ);
+            scene.add(trees);
         });
 
         window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('resize', onWindowResize);
-        window.addEventListener('scroll', () => {
-            const h = document.documentElement, b = document.body;
-            scrollProgress = (h.scrollTop || b.scrollTop) / (h.scrollHeight - h.clientHeight);
-        });
+        animate();
     }
 
-    function createGUI() {
-        const gui = new GUI({ title: '🕹️ CONFIGURATION' });
-        
-        const shadowFolder = gui.addFolder('Ombres Portées');
-        shadowFolder.add(settings, 'currentShadowName', Object.keys(shadowList)).name('Type').onChange(v => updateShadowTexture(shadowList[v]));
-        shadowFolder.add(settings, 'shadowOpacity', 0, 1).name('Opacité').onChange(v => { if (bakedShadow) bakedShadow.material.opacity = v; });
-        shadowFolder.open();
-
-        const sceneFolder = gui.addFolder('Réglages Effets');
-        sceneFolder.add(settings, 'rgbOffset', 0, 0.05).name('Aberration RGB').onChange(v => {
-            if(composer) composer.passes[3].uniforms.uOffset.value = v;
-        });
-        sceneFolder.open();
+    function onMouseMove(e) {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObject(groundPlane);
+        if (intersects.length > 0 && groundPointsMesh) {
+            groundPointsMesh.material.uniforms.uMouse.value.copy(intersects[0].point);
+        }
     }
 
-    function createBakedShadow() {
-        const initialTextureUrl = shadowList[settings.currentShadowName];
-        textureLoader.load(initialTextureUrl, (texture) => {
-            const shadowGeo = new THREE.PlaneGeometry(1, 1); 
-            const shadowMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: settings.shadowOpacity });
-            bakedShadow = new THREE.Mesh(shadowGeo, shadowMat);
-            bakedShadow.rotation.x = -Math.PI / 2;
-            bakedShadow.position.y = settings.shadowPosY; 
-            bakedShadow.scale.set(settings.shadowScaleX, settings.shadowScaleY, 1);
-            model.add(bakedShadow);
+    function createSurfacePoints(meshGroup) {
+        const positions = [], normals = [], randoms = [];
+        meshGroup.traverse((child) => {
+            if (child.isMesh && !child.name.toLowerCase().includes('outline')) {
+                const sampler = new MeshSurfaceSampler(child).build();
+                const tempPos = new THREE.Vector3(), tempNormal = new THREE.Vector3();
+                for (let i = 0; i < 22000; i++) {
+                    sampler.sample(tempPos, tempNormal);
+                    child.localToWorld(tempPos);
+                    tempNormal.transformDirection(child.matrixWorld);
+                    positions.push(tempPos.x, tempPos.y, tempPos.z);
+                    normals.push(tempNormal.x, tempNormal.y, tempNormal.z);
+                    randoms.push(Math.random());
+                }
+            }
         });
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        geometry.setAttribute('aRandom', new THREE.Float32BufferAttribute(randoms, 1));
+
+        const mat = new THREE.ShaderMaterial({
+            uniforms: {
+                uTime: { value: 0 }, uScanSpeed: { value: settings.scanSpeed }, uScanRadiusMax: { value: settings.scanRadiusMax },
+                uTrailGap: { value: settings.trailGap }, uOriginY: { value: settings.originY }, uPointSize: { value: settings.surfacePointSize },
+                uBaseAlpha: { value: settings.pointsVisibleBase }, uInflation: { value: settings.uInflation },
+                uBaseColor: { value: new THREE.Color(settings.baseColor) },
+                uScanColor: { value: new THREE.Color(settings.scanColor) }
+            },
+            vertexShader: `
+                attribute float aRandom;
+                uniform float uTime, uScanSpeed, uScanRadiusMax, uTrailGap, uOriginY, uPointSize, uBaseAlpha, uInflation;
+                varying float vAlpha, vIntensity;
+                void main() {
+                    vec3 p = position + (normal * uInflation);
+                    vec3 origin = vec3(0.0, uOriginY, 0.0);
+                    float d = distance(p, origin);
+                    float curR = mod(uTime * uScanSpeed * 5.0, uScanRadiusMax);
+                    vIntensity = smoothstep(curR + 0.5, curR - 0.5, d) * smoothstep(curR - uTrailGap - 0.5, curR - uTrailGap + 0.5, d);
+                    float flicker = sin(uTime * 10.0 + aRandom * 100.0) * 0.5 + 0.5;
+                    vAlpha = (uBaseAlpha * mix(0.5, 1.0, flicker)) + (vIntensity * (1.0 - uBaseAlpha));
+                    vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
+                    gl_PointSize = (uPointSize * mix(0.7, 1.3, vIntensity * flicker)) * (1.0 / -mvPos.z);
+                    gl_Position = projectionMatrix * mvPos;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 uBaseColor, uScanColor;
+                varying float vAlpha, vIntensity;
+                void main() {
+                    if (distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
+                    gl_FragColor = vec4(mix(uBaseColor, uScanColor, vIntensity), vAlpha);
+                }
+            `,
+            transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+        });
+        surfacePointsMesh = new THREE.Points(geometry, mat);
+        scene.add(surfacePointsMesh);
     }
 
-    function updateShadowTexture(textureUrl) {
-        if (!bakedShadow) return;
-        textureLoader.load(textureUrl, (newTexture) => {
-            bakedShadow.material.map = newTexture;
-            bakedShadow.material.needsUpdate = true;
-        });
-    }
-
-    function createInteractivePoints() {
+    function createGroundPoints() {
         const count = 70, spacing = 0.45;
         const geo = new THREE.BufferGeometry();
         const pos = new Float32Array(count * count * 3);
@@ -207,19 +193,15 @@
             for (let j = 0; j < count; j++) {
                 let idx = (i * count + j) * 3;
                 pos[idx] = (i - count / 2) * spacing;
-                pos[idx + 1] = 0; 
-                pos[idx + 2] = (j - count / 2) * spacing;
+                pos[idx + 1] = 0; pos[idx + 2] = (j - count / 2) * spacing;
             }
         }
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         const mat = new THREE.ShaderMaterial({
             uniforms: {
-                time: { value: 0 },
-                uMouse: { value: new THREE.Vector3(100, 0, 100) },
-                uSizeBase: { value: settings.pointSizeBase },
-                uSizeHover: { value: settings.pointSizeHover },
-                uExcludeRadius: { value: settings.uExcludeRadius },
-                uHeight: { value: settings.pointsHeight }
+                time: { value: 0 }, uMouse: { value: new THREE.Vector3(100, 0, 100) }, uSizeBase: { value: settings.pointSizeBase },
+                uSizeHover: { value: settings.pointSizeHover }, uExcludeRadius: { value: settings.uExcludeRadius }, uHeight: { value: settings.pointsHeight },
+                uBaseColor: { value: new THREE.Color(settings.baseColor) }
             },
             vertexShader: `
                 uniform float time; uniform vec3 uMouse; uniform float uSizeBase, uSizeHover, uExcludeRadius, uHeight;
@@ -228,117 +210,91 @@
                     vec3 p = position;
                     float distFromCenter = length(p.xz);
                     vVisible = smoothstep(uExcludeRadius - 0.5, uExcludeRadius + 1.0, distFromCenter);
-                    p.y = uHeight + sin(distFromCenter * 0.8 - time * 1.5) * 0.08;
+                    p.y = uHeight + sin(distFromCenter * 0.8 - time * 1.5) * 0.02;
                     float dM = distance(p.xz, uMouse.xz);
-                    vHover = smoothstep(4.0, 0.0, dM);
-                    if (dM < 4.0) { p.xz += normalize(uMouse.xz - p.xz + 0.0001) * vHover * 0.2; }
+                    vHover = smoothstep(4.5, 0.0, dM);
+                    if (dM < 4.5) { p.xz += normalize(uMouse.xz - p.xz + 0.0001) * vHover * 0.25; }
                     vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
-                    gl_PointSize = (mix(uSizeBase, uSizeHover, vHover) * vVisible) * (0.7 / -mvPos.z);
+                    gl_PointSize = (mix(uSizeBase, uSizeHover, vHover) * vVisible) * (0.8 / -mvPos.z);
                     gl_Position = projectionMatrix * mvPos;
                 }
             `,
             fragmentShader: `
+                uniform vec3 uBaseColor;
                 varying float vHover, vVisible;
                 void main() {
                     if (vVisible < 0.01 || distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
-                    gl_FragColor = vec4(mix(vec3(0.0, 0.12, 0.98), vec3(0.0, 0.98, 0.85), vHover), mix(0.7, 1.0, vHover) * vVisible);
+                    vec3 hoverCyan = vec3(0.0, 0.98, 0.85);
+                    gl_FragColor = vec4(mix(uBaseColor, hoverCyan, vHover), mix(0.7, 1.0, vHover) * vVisible);
                 }
             `,
             transparent: true, depthWrite: false
         });
-        pointsMesh = new THREE.Points(geo, mat);
-        scene.add(pointsMesh);
+        groundPointsMesh = new THREE.Points(geo, mat);
+        scene.add(groundPointsMesh);
+    }
+
+    function createBakedShadow() {
+        const shadowPath = 'ombre_maison-dure-noir.png';
+        textureLoader.load(shadowPath, (texture) => {
+            bakedShadow = new THREE.Mesh(
+                new THREE.PlaneGeometry(16.8, 16.8), 
+                new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: settings.shadowOpacity })
+            );
+            bakedShadow.rotation.x = -Math.PI / 2;
+            bakedShadow.position.y = 0.04; 
+            model.add(bakedShadow);
+        });
     }
 
     function initPostProcessing() {
         composer = new EffectComposer(renderer);
         composer.addPass(new RenderPass(scene, camera));
-        const v = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
         
         composer.addPass(new ShaderPass({
             uniforms: { 'tDiffuse': { value: null }, 'uFocus': { value: settings.bokehFocus }, 'uMaxBlur': { value: settings.bokehBlurMax }, 'uAspect': { value: window.innerWidth / window.innerHeight } },
-            vertexShader: v,
-            fragmentShader: `
-                uniform sampler2D tDiffuse; uniform float uFocus, uMaxBlur, uAspect; varying vec2 vUv;
-                void main() {
-                    vec2 aspect = vec2(uAspect, 1.0); float d = length((vUv - 0.5) * aspect);
-                    float bI = smoothstep(uFocus * uAspect, (uFocus + 0.3) * uAspect, d);
-                    float bR = bI * uMaxBlur; vec4 c = vec4(0.0);
-                    for(float x = -2.0; x <= 2.0; x++) { for(float y = -2.0; y <= 2.0; y++) {
-                        c += texture2D(tDiffuse, vUv + vec2(x / uAspect, y) * bR);
-                    } } gl_FragColor = c / 25.0;
-                }
-            `
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+            fragmentShader: `uniform sampler2D tDiffuse; uniform float uFocus, uMaxBlur, uAspect; varying vec2 vUv; void main() { vec2 aspect = vec2(uAspect, 1.0); float d = length((vUv - 0.5) * aspect); float bI = smoothstep(uFocus * uAspect, (uFocus + 0.3) * uAspect, d); float bR = bI * uMaxBlur; vec4 c = vec4(0.0); for(float x = -2.0; x <= 2.0; x++) { for(float y = -2.0; y <= 2.0; y++) { c += texture2D(tDiffuse, vUv + vec2(x / uAspect, y) * bR); } } gl_FragColor = c / 25.0; }`
         }));
-        
+
         composer.addPass(new ShaderPass({
-            uniforms: { 'tDiffuse': { value: null }, 'time': { value: 0 }, 'uIntensity': { value: settings.grainIntensity } },
-            vertexShader: v,
-            fragmentShader: `
-                uniform sampler2D tDiffuse; uniform float time, uIntensity; varying vec2 vUv;
-                void main() {
-                    vec4 c = texture2D(tDiffuse, vUv);
-                    float n = (fract(sin(dot(vUv + time, vec2(12.9898,78.233))) * 43758.5453) - 0.5) * uIntensity;
-                    gl_FragColor = vec4(c.rgb + n, c.a);
-                }
-            `
+            uniforms: { 'tDiffuse': { value: null }, 'time': { value: 0 }, 'uIntensity': { value: 0.04 } },
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+            fragmentShader: `uniform sampler2D tDiffuse; uniform float time, uIntensity; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float n = (fract(sin(dot(vUv + time, vec2(12.9898,78.233))) * 43758.5453) - 0.5) * uIntensity; gl_FragColor = vec4(c.rgb + n, c.a); }`
         }));
-        
+
         composer.addPass(new ShaderPass({
             uniforms: { 'tDiffuse': { value: null }, 'uOffset': { value: settings.rgbOffset }, 'uAspect': { value: window.innerWidth / window.innerHeight } },
-            vertexShader: v,
-            fragmentShader: `
-                uniform sampler2D tDiffuse; uniform float uOffset, uAspect; varying vec2 vUv;
-                void main() {
-                    vec2 d = (vUv - 0.5); d.y /= uAspect; float dst = length(d);
-                    gl_FragColor = vec4(texture2D(tDiffuse, vUv + d * uOffset * dst).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - d * uOffset * dst).b, 1.0);
-                }
-            `
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+            fragmentShader: `uniform sampler2D tDiffuse; uniform float uOffset, uAspect; varying vec2 vUv; void main() { vec2 d = (vUv - 0.5); d.y /= uAspect; float dst = length(d); gl_FragColor = vec4(texture2D(tDiffuse, vUv + d * uOffset * dst).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - d * uOffset * dst).b, 1.0); }`
         }));
-    }
-
-    function onMouseMove(e) {
-        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        raycaster.setFromCamera(mouse, camera);
-        const hit = raycaster.intersectObject(groundPlane);
-        if (hit.length > 0) pointsMesh.material.uniforms.uMouse.value.copy(hit[0].point);
-    }
-
-    function onWindowResize() {
-        const a = window.innerWidth / window.innerHeight;
-        camera.left = -6.5 * a; camera.right = 6.5 * a;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        composer.setSize(window.innerWidth, window.innerHeight);
     }
 
     function animate() {
         requestAnimationFrame(animate);
         const t = clock.getElapsedTime();
-        if (pointsMesh) pointsMesh.material.uniforms.time.value = t;
-        if (composer) composer.passes[2].uniforms.time.value = t;
+        if (groundPointsMesh) groundPointsMesh.material.uniforms.time.value = t;
+        if (surfacePointsMesh) surfacePointsMesh.material.uniforms.uTime.value = t;
+        if (composer && composer.passes[2]) composer.passes[2].uniforms.time.value = t;
 
-        const currentTargetZoom = 1 + (scrollProgress * settings.targetZoomAmount);
-        const currentTargetRotX = scrollProgress * settings.targetRotationX;
-        const currentTargetRotY = scrollProgress * settings.targetRotationY;
-
-        camera.zoom += (currentTargetZoom - camera.zoom) * 0.1;
-        camera.updateProjectionMatrix();
-
-        const mX = -mouse.y * 0.08, mY = mouse.x * 0.08;
-        const fX = mX + currentTargetRotX, fY = mY + currentTargetRotY;
+        const rotX = -mouse.y * 0.005;
+        const rotY = mouse.x * 0.05;
 
         if (model) {
-            model.rotation.x += (fX - model.rotation.x) * 0.05;
-            model.rotation.y += (fY - model.rotation.y) * 0.05;
+            model.rotation.x += (rotX - model.rotation.x) * 0.05;
+            model.rotation.y += (rotY - model.rotation.y) * 0.05;
+            if (surfacePointsMesh) surfacePointsMesh.rotation.copy(model.rotation);
         }
-        if (pointsMesh) {
-            pointsMesh.rotation.x += (fX - pointsMesh.rotation.x) * 0.05;
-            pointsMesh.rotation.y += (fY - pointsMesh.rotation.y) * 0.05;
+        if (trees) {
+            trees.rotation.x += (rotX - trees.rotation.x) * 0.05;
+            trees.rotation.y += (rotY - trees.rotation.y) * 0.05;
+        }
+        if (groundPointsMesh) {
+            groundPointsMesh.rotation.x += (rotX - groundPointsMesh.rotation.x) * 0.05;
+            groundPointsMesh.rotation.y += (rotY - groundPointsMesh.rotation.y) * 0.05;
         }
 
-        composer.render();
+        if (composer) composer.render();
     }
 </script>
 </body>
