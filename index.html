@@ -3,13 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maison 3D - Hologramme Final</title>
+    <title>Maison 3D - Curseur Forcé</title>
     <style>
-        body { margin: 0; background-color: #ffffff; height: 100vh; overflow: hidden; font-family: sans-serif; }
-        canvas { display: block; position: fixed; top: 0; left: 0; }
+        /* Sécurité CSS maximale */
+        html, body, canvas, * {
+            cursor: none !important;
+        }
+
+        body { 
+            margin: 0; 
+            background-color: #ffffff; 
+            height: 100vh; 
+            overflow: hidden; 
+        }
+
+        canvas { 
+            display: block; 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+        }
+
+        /* Le curseur personnalisé (DIV) */
+        #custom-cursor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 25px; 
+            height: 25px;
+            pointer-events: none; 
+            z-index: 100000;
+            background-image: url('pointer.svg'); /* Assure-toi que le fichier est présent */
+            background-size: contain;
+            background-repeat: no-repeat;
+            display: none;
+            will-change: transform;
+        }
     </style>
 </head>
 <body>
+
+<div id="custom-cursor"></div>
 
 <script type="importmap">
     {
@@ -35,28 +69,52 @@
     const clock = new THREE.Clock();
     const textureLoader = new THREE.TextureLoader();
 
+    const cursorEl = document.getElementById('custom-cursor');
+
+    // --- SÉCURITÉ ANTI-CURSEUR SYSTÈME ---
+    const hideSystemCursor = () => {
+        if (document.body.style.cursor !== 'none') {
+            document.body.style.cursor = 'none';
+            document.documentElement.style.cursor = 'none';
+        }
+    };
+
+    window.addEventListener('mousemove', (e) => {
+        cursorEl.style.display = 'block';
+        // Utilisation de translate3d pour forcer le rendu GPU du curseur
+        cursorEl.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+        
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        
+        hideSystemCursor();
+    });
+
+    // Cacher lors des clics (moment où Windows force souvent le retour du curseur)
+    window.addEventListener('mousedown', hideSystemCursor);
+    window.addEventListener('mouseup', hideSystemCursor);
+
     const settings = {
         exposure: 1.70,
-        rgbOffset: 0.018,
+        rgbOffset: 0,
         bokehFocus: 0.3,
         bokehBlurMax: 0.007,
         baseColor: '#001DFC',
         scanColor: '#00FCDA',
-        scanSpeed: 0.8,           
+        scanSpeed: 0.5,           
+        trailGap: 4.5,            
         scanRadiusMax: 12.0,       
-        trailGap: 2.5,            
         originY: 4.0,             
-        pointsVisibleBase: 0,   
+        pointsVisibleBase: 0.0,   
         surfacePointSize: 42.0,
         uInflation: 0.04,
         pointSizeBase: 80.0,
         pointSizeHover: 100.0, 
         pointsHeight: -1,
-        shadowOpacity: 0.4,
-        currentShadowName: 'Dure Noir',
-        treePosX: -0.77,
-        treePosY: -0.92,
-        treePosZ: -0.56
+        shadowOpacity: 0.8,
+        treePosX: -0.87,
+        treePosY: -0.98,
+        treePosZ: -0.67
     };
 
     init();
@@ -91,7 +149,6 @@
         createGroundPoints();
 
         const loader = new GLTFLoader();
-        
         loader.load('maison.glb', (gltf) => {
             model = gltf.scene;
             model.updateMatrixWorld(true);
@@ -110,24 +167,14 @@
             scene.add(trees);
         });
 
-        window.addEventListener('mousemove', onMouseMove);
         animate();
     }
 
-    function onMouseMove(e) {
-        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObject(groundPlane);
-        if (intersects.length > 0 && groundPointsMesh) {
-            groundPointsMesh.material.uniforms.uMouse.value.copy(intersects[0].point);
-        }
-    }
-
+    // Fonctions createSurfacePoints, createGroundPoints, createBakedShadow, initPostProcessing
     function createSurfacePoints(meshGroup) {
         const positions = [], normals = [], randoms = [];
         meshGroup.traverse((child) => {
-            if (child.isMesh && !child.name.toLowerCase().includes('outline')) {
+            if (child.isMesh) {
                 const sampler = new MeshSurfaceSampler(child).build();
                 const tempPos = new THREE.Vector3(), tempNormal = new THREE.Vector3();
                 for (let i = 0; i < 22000; i++) {
@@ -140,12 +187,10 @@
                 }
             }
         });
-
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
         geometry.setAttribute('aRandom', new THREE.Float32BufferAttribute(randoms, 1));
-
         const mat = new THREE.ShaderMaterial({
             uniforms: {
                 uTime: { value: 0 }, uScanSpeed: { value: settings.scanSpeed }, uScanRadiusMax: { value: settings.scanRadiusMax },
@@ -176,10 +221,11 @@
                 varying float vAlpha, vIntensity;
                 void main() {
                     if (distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
-                    gl_FragColor = vec4(mix(uBaseColor, uScanColor, vIntensity), vAlpha);
+                    vec3 finalCol = mix(uBaseColor, uScanColor, vIntensity);
+                    gl_FragColor = vec4(finalCol, vAlpha);
                 }
             `,
-            transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+            transparent: true, depthWrite: false
         });
         surfacePointsMesh = new THREE.Points(geometry, mat);
         scene.add(surfacePointsMesh);
@@ -200,7 +246,7 @@
         const mat = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 }, uMouse: { value: new THREE.Vector3(100, 0, 100) }, uSizeBase: { value: settings.pointSizeBase },
-                uSizeHover: { value: settings.pointSizeHover }, uExcludeRadius: { value: settings.uExcludeRadius }, uHeight: { value: settings.pointsHeight },
+                uSizeHover: { value: settings.pointSizeHover }, uExcludeRadius: { value: 3 }, uHeight: { value: settings.pointsHeight },
                 uBaseColor: { value: new THREE.Color(settings.baseColor) }
             },
             vertexShader: `
@@ -235,14 +281,13 @@
     }
 
     function createBakedShadow() {
-        const shadowPath = 'ombre_maison-dure-noir.png';
-        textureLoader.load(shadowPath, (texture) => {
+        textureLoader.load('ombre_maison-dure-bleu.png?v=1', (texture) => {
             bakedShadow = new THREE.Mesh(
                 new THREE.PlaneGeometry(16.8, 16.8), 
                 new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: settings.shadowOpacity })
             );
             bakedShadow.rotation.x = -Math.PI / 2;
-            bakedShadow.position.y = 0.04; 
+            bakedShadow.position.set(0, 0.04, 0); 
             model.add(bakedShadow);
         });
     }
@@ -250,32 +295,35 @@
     function initPostProcessing() {
         composer = new EffectComposer(renderer);
         composer.addPass(new RenderPass(scene, camera));
-        
         composer.addPass(new ShaderPass({
             uniforms: { 'tDiffuse': { value: null }, 'uFocus': { value: settings.bokehFocus }, 'uMaxBlur': { value: settings.bokehBlurMax }, 'uAspect': { value: window.innerWidth / window.innerHeight } },
             vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
             fragmentShader: `uniform sampler2D tDiffuse; uniform float uFocus, uMaxBlur, uAspect; varying vec2 vUv; void main() { vec2 aspect = vec2(uAspect, 1.0); float d = length((vUv - 0.5) * aspect); float bI = smoothstep(uFocus * uAspect, (uFocus + 0.3) * uAspect, d); float bR = bI * uMaxBlur; vec4 c = vec4(0.0); for(float x = -2.0; x <= 2.0; x++) { for(float y = -2.0; y <= 2.0; y++) { c += texture2D(tDiffuse, vUv + vec2(x / uAspect, y) * bR); } } gl_FragColor = c / 25.0; }`
         }));
-
         composer.addPass(new ShaderPass({
             uniforms: { 'tDiffuse': { value: null }, 'time': { value: 0 }, 'uIntensity': { value: 0.04 } },
             vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
             fragmentShader: `uniform sampler2D tDiffuse; uniform float time, uIntensity; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float n = (fract(sin(dot(vUv + time, vec2(12.9898,78.233))) * 43758.5453) - 0.5) * uIntensity; gl_FragColor = vec4(c.rgb + n, c.a); }`
-        }));
-
-        composer.addPass(new ShaderPass({
-            uniforms: { 'tDiffuse': { value: null }, 'uOffset': { value: settings.rgbOffset }, 'uAspect': { value: window.innerWidth / window.innerHeight } },
-            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-            fragmentShader: `uniform sampler2D tDiffuse; uniform float uOffset, uAspect; varying vec2 vUv; void main() { vec2 d = (vUv - 0.5); d.y /= uAspect; float dst = length(d); gl_FragColor = vec4(texture2D(tDiffuse, vUv + d * uOffset * dst).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - d * uOffset * dst).b, 1.0); }`
         }));
     }
 
     function animate() {
         requestAnimationFrame(animate);
         const t = clock.getElapsedTime();
-        if (groundPointsMesh) groundPointsMesh.material.uniforms.time.value = t;
+        
+        // On force le masquage système à chaque frame
+        hideSystemCursor();
+
+        if (groundPointsMesh) {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(groundPlane);
+            if (intersects.length > 0) {
+                groundPointsMesh.material.uniforms.uMouse.value.copy(intersects[0].point);
+            }
+            groundPointsMesh.material.uniforms.time.value = t;
+        }
         if (surfacePointsMesh) surfacePointsMesh.material.uniforms.uTime.value = t;
-        if (composer && composer.passes[2]) composer.passes[2].uniforms.time.value = t;
+        if (composer) composer.render();
 
         const rotX = -mouse.y * 0.005;
         const rotY = mouse.x * 0.05;
@@ -293,8 +341,6 @@
             groundPointsMesh.rotation.x += (rotX - groundPointsMesh.rotation.x) * 0.05;
             groundPointsMesh.rotation.y += (rotY - groundPointsMesh.rotation.y) * 0.05;
         }
-
-        if (composer) composer.render();
     }
 </script>
 </body>
